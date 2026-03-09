@@ -16,6 +16,7 @@ import hashlib
 import tarfile
 import datetime
 import http.client
+import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -86,6 +87,26 @@ def _get_signature_key(key, date_stamp, region, service):
     return k_signing
 
 
+def _uri_encode(value, encode_slash=True):
+    """AWS Signature V4 要求的 URI 编码"""
+    if encode_slash:
+        return urllib.parse.quote(str(value), safe="-_.~")
+    else:
+        return urllib.parse.quote(str(value), safe="-_.~/")
+
+
+def _encode_query_string(qs):
+    """对 query string 按 AWS Sig V4 规范编码并排序"""
+    if not qs:
+        return ""
+    params = urllib.parse.parse_qsl(qs, keep_blank_values=True)
+    encoded = []
+    for k, v in params:
+        encoded.append(f"{_uri_encode(k)}={_uri_encode(v)}")
+    encoded.sort()
+    return "&".join(encoded)
+
+
 def s3_request(method, uri, body=b"", extra_headers=None):
     """通用 S3 签名请求 (AWS Signature V4)"""
     content_hash = hashlib.sha256(body).hexdigest()
@@ -104,9 +125,14 @@ def s3_request(method, uri, body=b"", extra_headers=None):
     signed_headers = "host;x-amz-content-sha256;x-amz-date"
 
     if "?" in uri:
-        canonical_uri, canonical_qs = uri.split("?", 1)
+        raw_uri, raw_qs = uri.split("?", 1)
     else:
-        canonical_uri, canonical_qs = uri, ""
+        raw_uri, raw_qs = uri, ""
+
+    # URI 路径编码（保留 /）
+    canonical_uri = _uri_encode(raw_uri, encode_slash=False)
+    # Query string 编码（/ 等特殊字符需编码）
+    canonical_qs = _encode_query_string(raw_qs)
 
     canonical_request = "\n".join([
         method, canonical_uri, canonical_qs,
@@ -136,8 +162,13 @@ def s3_request(method, uri, body=b"", extra_headers=None):
     if extra_headers:
         headers.update(extra_headers)
 
+    # 实际发送的 URI 也需要编码 query string
+    request_uri = canonical_uri
+    if canonical_qs:
+        request_uri = f"{canonical_uri}?{canonical_qs}"
+
     conn = http.client.HTTPSConnection(host)
-    conn.request(method, uri, body, headers)
+    conn.request(method, request_uri, body, headers)
     return conn.getresponse()
 
 
