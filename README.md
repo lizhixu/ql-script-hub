@@ -130,7 +130,7 @@
 
 ---
 
-### 💾 www 目录备份 (`backup.sh`)
+### 💾 www 目录备份 (`backup.py`)
 
 > cron: `0 2 * * *`
 
