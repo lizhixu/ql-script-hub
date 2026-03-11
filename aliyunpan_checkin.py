@@ -615,7 +615,7 @@ class AliYun:
                     error_msg = error_detail.get("message", f"HTTP {response.status_code}")
                 except:
                     error_msg = f"签到请求失败，HTTP状态码: {response.status_code}"
-                return error_msg, False
+                return error_msg, False, ""
                 
             result = response.json()
             
@@ -623,56 +623,26 @@ class AliYun:
             if not result.get("success", False):
                 error_msg = result.get("message", "签到失败")
                 print(f"❌ 签到失败: {error_msg}")
-                return error_msg, False
+                return error_msg, False, ""
             
             sign_days = result.get("result", {}).get("signInCount", 0)
             print(f"📅 累计签到: {sign_days}天")
             
-            # 分析签到日志，找到今天的签到记录
-            sign_logs = result.get("result", {}).get("signInLogs", [])
+            # 领取今日奖励
             reward_info = ""
-            today_reward_found = False
+            if sign_days > 0:
+                reward_info = self.claim_reward(access_token, sign_days)
             
-            if sign_logs:
-                print("🔍 正在分析签到日志...")
-                # 找到第一个status为normal的记录（今天签到的）
-                for i, log in enumerate(sign_logs):
-                    if log.get("status") == "normal":
-                        print(f"📋 找到今日签到记录: 第{log.get('day', i+1)}天")
-                        today_reward_found = True
-                        
-                        reward_type = log.get("type", "")
-                        reward_amount = log.get("rewardAmount", 0)
-                        reward_obj = log.get("reward", {})
-                        
-                        print(f"🔍 奖励类型: {reward_type}, 数量: {reward_amount}")
-                        
-                        if reward_type == "postpone":
-                            if reward_amount > 0:
-                                reward_info = f"延期卡 x{reward_amount}"
-                                print(f"🎁 今日奖励: 延期卡 x{reward_amount}")
-                            else:
-                                reward_info = f"延期卡"
-                                print(f"🎁 今日奖励: 延期卡")
-                        elif reward_type == "backupSpaceMb":
-                            if reward_amount > 0:
-                                reward_info = f"备份空间 {reward_amount}MB"
-                                print(f"🎁 今日奖励: 备份空间 {reward_amount}MB")
-                            else:
-                                reward_info = f"备份空间"
-                                print(f"🎁 今日奖励: 备份空间")
-                        elif reward_obj.get("name") or reward_obj.get("description"):
-                            reward_name = reward_obj.get("name", "")
-                            reward_desc = reward_obj.get("description", "")
-                            reward_info = f"{reward_name}{reward_desc}"
-                            print(f"🎁 今日奖励: {reward_name}{reward_desc}")
-                        elif reward_amount > 0:
-                            reward_info = f"{reward_type} x{reward_amount}"
-                            print(f"🎁 今日奖励: {reward_type} x{reward_amount}")
-                        else:
-                            reward_info = f"{reward_type}"
-                            print(f"🎁 今日奖励: {reward_type}")
-                        break
+            # 如果领取奖励接口未返回有效信息，尝试从签到日志中获取
+            if not reward_info:
+                sign_logs = result.get("result", {}).get("signInLogs", [])
+                if sign_logs:
+                    print("🔍 正在从签到日志中分析奖励信息...")
+                    for i, log in enumerate(sign_logs):
+                        if log.get("status") == "normal":
+                            print(f"📋 找到今日签到记录: 第{log.get('day', i+1)}天")
+                            reward_info = self._parse_reward_from_log(log)
+                            break
             
             # 如果仍然没有奖励信息
             if not reward_info:
@@ -691,6 +661,97 @@ class AliYun:
             error_msg = f"签到异常: {str(e)}"
             print(f"❌ {error_msg}")
             return error_msg, False, ""
+
+    def _parse_reward_from_log(self, log):
+        """从签到日志记录中解析奖励信息"""
+        reward_type = log.get("type", "")
+        reward_amount = log.get("rewardAmount", 0)
+        reward_obj = log.get("reward", {})
+        
+        print(f"🔍 奖励类型: {reward_type}, 数量: {reward_amount}")
+        
+        if reward_type == "postpone":
+            if reward_amount > 0:
+                reward_info = f"延期卡 x{reward_amount}"
+            else:
+                reward_info = "延期卡"
+        elif reward_type == "backupSpaceMb":
+            if reward_amount > 0:
+                reward_info = f"备份空间 {reward_amount}MB"
+            else:
+                reward_info = "备份空间"
+        elif reward_obj.get("name") or reward_obj.get("description"):
+            reward_name = reward_obj.get("name", "")
+            reward_desc = reward_obj.get("description", "")
+            reward_info = f"{reward_name}{reward_desc}"
+        elif reward_amount > 0:
+            reward_info = f"{reward_type} x{reward_amount}"
+        elif reward_type:
+            reward_info = f"{reward_type}"
+        else:
+            return ""
+        
+        print(f"🎁 奖励: {reward_info}")
+        return reward_info
+
+    def claim_reward(self, access_token, sign_day):
+        """领取签到奖励"""
+        try:
+            print(f"🎁 正在领取第{sign_day}天签到奖励...")
+            url = "https://member.aliyundrive.com/v1/activity/sign_in_reward"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            data = {"signInDay": sign_day}
+            
+            response = requests.post(url=url, headers=headers, json=data, timeout=15)
+            print(f"🔍 领取奖励响应状态码: {response.status_code}")
+            
+            if response.status_code != 200:
+                try:
+                    error_detail = response.json()
+                    error_msg = error_detail.get("message", f"HTTP {response.status_code}")
+                except:
+                    error_msg = f"领取奖励请求失败，HTTP状态码: {response.status_code}"
+                print(f"⚠️ 领取奖励失败: {error_msg}")
+                return ""
+            
+            result = response.json()
+            
+            if not result.get("success", False):
+                error_msg = result.get("message", "领取奖励失败")
+                print(f"⚠️ 领取奖励失败: {error_msg}")
+                return ""
+            
+            # 解析奖励信息
+            reward_result = result.get("result", {})
+            reward_name = reward_result.get("name", "")
+            reward_desc = reward_result.get("description", "")
+            reward_notice = reward_result.get("notice", "")
+            
+            # 组合奖励信息
+            reward_info = ""
+            if reward_name:
+                reward_info = reward_name
+                if reward_desc:
+                    reward_info += f"({reward_desc})"
+            elif reward_notice:
+                reward_info = reward_notice
+            elif reward_desc:
+                reward_info = reward_desc
+            
+            if reward_info:
+                print(f"✅ 成功领取奖励: {reward_info}")
+            else:
+                print("✅ 奖励已领取")
+            
+            return reward_info
+            
+        except Exception as e:
+            print(f"⚠️ 领取奖励异常: {str(e)}")
+            return ""
+
 
     def main(self):
         """主执行函数"""
