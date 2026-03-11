@@ -698,17 +698,23 @@ class AliYun:
         """领取签到奖励"""
         try:
             print(f"🎁 正在领取第{sign_day}天签到奖励...")
-            url = "https://member.aliyundrive.com/v1/activity/sign_in_reward"
-            params = {"_rx-s": "mobile"}
+            url = "https://member.aliyundrive.com/v1/activity/sign_in_reward?_rx-s=mobile"
+            
+            # 生成稳定的设备ID
+            device_id = hashlib.md5(access_token[:16].encode()).hexdigest()
+            
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "AliApp(AYSD/6.16.0) com.alicloud.databox/6.16.0 Channel/36176727979800@rimet_android_6.16.0 language/zh-CN /Android Mobile/Mi 14",
-                "x-canary": "client=Android,bindingApp=china_Chinese_china",
+                "Origin": "https://pages.aliyundrive.com",
+                "Referer": "https://pages.aliyundrive.com/",
+                "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mi 14 Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36 AliApp(AYSD/6.16.0) UCBrowser/15.0.2.1210",
+                "x-canary": "client=Android,app=adrive,version=v6.16.0",
+                "x-device-id": device_id,
             }
             data = {"signInDay": sign_day}
             
-            response = requests.post(url=url, headers=headers, params=params, json=data, timeout=15)
+            response = requests.post(url=url, headers=headers, json=data, timeout=15)
             print(f"🔍 领取奖励响应状态码: {response.status_code}")
             
             if response.status_code != 200:
