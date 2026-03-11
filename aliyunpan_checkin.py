@@ -14,7 +14,15 @@ import time
 import subprocess
 import sqlite3
 import hashlib
+import uuid
 from datetime import datetime, timedelta
+
+try:
+    from ecdsa import SigningKey, SECP256k1
+    HAS_ECDSA = True
+except ImportError:
+    HAS_ECDSA = False
+    print("⚠️ 未安装ecdsa库，领取奖励功能可能受限。可通过 pip install ecdsa 安装")
 
 urllib3.disable_warnings()
 
@@ -445,6 +453,12 @@ class AliYun:
         self.index = index
         self.new_refresh_token = None
         self.account_id = generate_account_id(refresh_token)
+        self.user_id = None
+        self.device_id = str(uuid.uuid4()).replace('-', '') + str(uuid.uuid4()).replace('-', '')
+        self.private_key = None
+        self.public_key_hex = None
+        self.session_created = False
+        self._init_keypair()
 
     def update_token(self):
         """更新访问令牌"""
@@ -488,6 +502,7 @@ class AliYun:
                 
             access_token = result.get("access_token")
             new_refresh_token = result.get("refresh_token")
+            self.user_id = result.get("user_id", "")
             
             if access_token:
                 print("✅ 访问令牌更新成功")
@@ -694,24 +709,105 @@ class AliYun:
         print(f"🎁 奖励: {reward_info}")
         return reward_info
 
+    def _init_keypair(self):
+        """初始化 secp256k1 密钥对"""
+        if not HAS_ECDSA:
+            return
+        try:
+            self.private_key = SigningKey.generate(curve=SECP256k1)
+            public_key = self.private_key.get_verifying_key()
+            self.public_key_hex = public_key.to_string("uncompressed").hex()
+        except Exception as e:
+            print(f"⚠️ 密钥对生成失败: {e}")
+
+    def _generate_signature(self):
+        """生成 x-signature 和 x-signature-v2"""
+        if not HAS_ECDSA or not self.private_key or not self.user_id:
+            return {}
+        try:
+            app_id = "25dzX3vbYqktVxyX"
+            sign_str = f"{app_id}:{self.device_id}:{self.user_id}:0"
+            
+            # x-signature: SHA256 → secp256k1 sign → hex + "01"
+            sign_bytes = sign_str.encode('utf-8')
+            signature = self.private_key.sign(sign_bytes, hashfunc=hashlib.sha256)
+            x_signature = signature.hex() + "01"
+            
+            # x-signature-v2: SHA1 of the same string
+            x_signature_v2 = hashlib.sha1(sign_bytes).hexdigest()
+            
+            return {
+                "x-signature": x_signature,
+                "x-signature-v2": x_signature_v2,
+            }
+        except Exception as e:
+            print(f"⚠️ 签名生成失败: {e}")
+            return {}
+
+    def create_session(self, access_token):
+        """创建设备会话（注册公钥）"""
+        if not HAS_ECDSA or not self.public_key_hex:
+            return
+        try:
+            print("🔐 正在创建设备会话...")
+            url = "https://api.aliyundrive.com/users/v1/users/device/create_session"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/6.9.1 Chrome/112.0.5615.165 Electron/24.1.3.6 Safari/537.36",
+                "x-canary": "client=windows,app=adrive,version=v6.9.1",
+                "x-device-id": self.device_id,
+            }
+            # 添加签名头
+            sig_headers = self._generate_signature()
+            headers.update(sig_headers)
+            
+            data = {
+                "deviceName": "Python Script",
+                "modelName": "Windows 客户端",
+                "pubKey": self.public_key_hex,
+            }
+            
+            response = requests.post(url=url, headers=headers, json=data, timeout=15)
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success", False) or result.get("result", False):
+                    self.session_created = True
+                    print("✅ 设备会话创建成功")
+                else:
+                    print(f"⚠️ 设备会话创建返回: {result}")
+            else:
+                print(f"⚠️ 设备会话创建失败: HTTP {response.status_code}")
+        except Exception as e:
+            print(f"⚠️ 设备会话创建异常: {e}")
+
     def claim_reward(self, access_token, sign_day):
         """领取签到奖励"""
         try:
             print(f"🎁 正在领取第{sign_day}天签到奖励...")
-            url = "https://member.aliyundrive.com/v1/activity/sign_in_reward?_rx-s=mobile"
             
-            # 生成稳定的设备ID
-            device_id = hashlib.md5(access_token[:16].encode()).hexdigest()
+            # 确保设备会话已创建
+            if not self.session_created and HAS_ECDSA:
+                self.create_session(access_token)
+            
+            url = "https://member.aliyundrive.com/v1/activity/sign_in_reward"
+            nonce = str(uuid.uuid4())
+            timestamp = str(int(time.time() * 1000))
             
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
-                "Origin": "https://pages.aliyundrive.com",
-                "Referer": "https://pages.aliyundrive.com/",
-                "User-Agent": "Mozilla/5.0 (Linux; Android 14; Mi 14 Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.82 Mobile Safari/537.36 AliApp(AYSD/6.16.0) UCBrowser/15.0.2.1210",
-                "x-canary": "client=Android,app=adrive,version=v6.16.0",
-                "x-device-id": device_id,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/6.9.1 Chrome/112.0.5615.165 Electron/24.1.3.6 Safari/537.36",
+                "x-canary": "client=windows,app=adrive,version=v6.9.1",
+                "x-device-id": self.device_id,
+                "x-timestamp": timestamp,
+                "x-nonce": nonce,
             }
+            
+            # 添加签名头
+            sig_headers = self._generate_signature()
+            headers.update(sig_headers)
+            
             data = {"signInDay": sign_day}
             
             response = requests.post(url=url, headers=headers, json=data, timeout=15)
@@ -741,12 +837,12 @@ class AliYun:
             
             # 组合奖励信息
             reward_info = ""
-            if reward_name:
+            if reward_notice:
+                reward_info = reward_notice
+            elif reward_name:
                 reward_info = reward_name
                 if reward_desc:
                     reward_info += f"({reward_desc})"
-            elif reward_notice:
-                reward_info = reward_notice
             elif reward_desc:
                 reward_info = reward_desc
             
