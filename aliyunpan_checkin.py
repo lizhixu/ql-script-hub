@@ -699,13 +699,16 @@ class AliYun:
         try:
             print(f"🎁 正在领取第{sign_day}天签到奖励...")
             url = "https://member.aliyundrive.com/v1/activity/sign_in_reward"
+            params = {"_rx-s": "mobile"}
             headers = {
                 "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "User-Agent": "AliApp(AYSD/6.16.0) com.alicloud.databox/6.16.0 Channel/36176727979800@rimet_android_6.16.0 language/zh-CN /Android Mobile/Mi 14",
+                "x-canary": "client=Android,bindingApp=china_Chinese_china",
             }
             data = {"signInDay": sign_day}
             
-            response = requests.post(url=url, headers=headers, json=data, timeout=15)
+            response = requests.post(url=url, headers=headers, params=params, json=data, timeout=15)
             print(f"🔍 领取奖励响应状态码: {response.status_code}")
             
             if response.status_code != 200:
