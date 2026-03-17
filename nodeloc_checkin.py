@@ -86,6 +86,8 @@ def setup_browser():
     try:
         driver = uc.Chrome(
             options=options,
+            driver_executable_path='/usr/bin/chromedriver',
+            version_main=138,
             use_subprocess=True
         )
         driver.set_window_size(1920, 1080)
