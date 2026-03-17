@@ -82,12 +82,33 @@ def setup_browser():
     options.add_argument('--disable-infobars')
     options.add_argument('--disable-popup-blocking')
     options.add_argument('--headless=new')
+    
+    # 尝试常见的 Chrome 路径
+    chrome_paths = [
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/opt/google/chrome/chrome',
+        '/snap/bin/chromium'
+    ]
+    
+    chrome_binary = None
+    for path in chrome_paths:
+        if os.path.exists(path):
+            chrome_binary = path
+            break
+    
+    if chrome_binary:
+        options.binary_location = chrome_binary
+        log.debug(f"🌐 使用 Chrome 路径: {chrome_binary}")
+    else:
+        log.warning("⚠️ 未找到 Chrome 浏览器，尝试使用默认路径")
+    
     log.debug("🌐 启动 Chrome（无头模式）...")
     try:
-        driver = uc.Chrome(
-            options=options,
-            use_subprocess=True
-        )
+        # 让 undetected_chromedriver 自动管理 ChromeDriver
+        driver = uc.Chrome(options=options, use_subprocess=True)
         driver.set_window_size(1920, 1080)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
         driver.execute_script("window.chrome = { runtime: {} };")
