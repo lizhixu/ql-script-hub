@@ -757,8 +757,8 @@ class AliYun:
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/6.9.1 Chrome/112.0.5615.165 Electron/24.1.3.6 Safari/537.36",
-                "x-canary": "client=windows,app=adrive,version=v6.9.1",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/7.1.2 Chrome/130.0.6723.59 Electron/32.0.1 Safari/537.36",
+                "x-canary": "client=windows,app=adrive,version=v7.1.2",
                 "x-device-id": self.device_id,
             }
             # 添加签名头
@@ -795,12 +795,12 @@ class AliYun:
             
             url = "https://member.aliyundrive.com/v1/activity/sign_in_reward"
             
-            # 使用更标准的请求头
+            # 使用最新版本的请求头
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/6.9.1 Chrome/112.0.5615.165 Electron/24.1.3.6 Safari/537.36",
-                "x-canary": "client=windows,app=adrive,version=v6.9.1",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/7.1.2 Chrome/130.0.6723.59 Electron/32.0.1 Safari/537.36",
+                "x-canary": "client=windows,app=adrive,version=v7.1.2",
                 "x-device-id": self.device_id,
             }
             
