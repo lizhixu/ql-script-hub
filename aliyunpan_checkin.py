@@ -42,6 +42,7 @@ random_signin = os.getenv("RANDOM_SIGNIN", "true").lower() == "true"
 auto_update_token = os.getenv("AUTO_UPDATE_TOKEN", "true").lower() == "true"
 privacy_mode = os.getenv("PRIVACY_MODE", "true").lower() == "true"  # 隐私模式
 show_token_in_notification = os.getenv("SHOW_TOKEN_IN_NOTIFICATION", "false").lower() == "true"  # 通知中是否显示token
+enable_device_session = os.getenv("ENABLE_DEVICE_SESSION", "false").lower() == "true"  # 是否启用设备会话（需要ecdsa库）
 
 def mask_sensitive_data(data, data_type="token"):
     """脱敏处理敏感数据"""
@@ -649,15 +650,17 @@ class AliYun:
                 reward_info = self.claim_reward(access_token, sign_days)
             
             # 如果领取奖励接口未返回有效信息，尝试从签到日志中获取
-            if not reward_info:
+            if not reward_info or reward_info == "":
                 sign_logs = result.get("result", {}).get("signInLogs", [])
                 if sign_logs:
                     print("🔍 正在从签到日志中分析奖励信息...")
-                    for i, log in enumerate(sign_logs):
-                        if log.get("status") == "normal":
-                            print(f"📋 找到今日签到记录: 第{log.get('day', i+1)}天")
+                    # 查找今天的签到记录
+                    for log in sign_logs:
+                        if log.get("status") == "normal" and log.get("isReward", False):
+                            print(f"📋 找到今日签到记录: 第{log.get('day', 0)}天")
                             reward_info = self._parse_reward_from_log(log)
-                            break
+                            if reward_info:
+                                break
             
             # 如果仍然没有奖励信息
             if not reward_info:
@@ -786,47 +789,71 @@ class AliYun:
         try:
             print(f"🎁 正在领取第{sign_day}天签到奖励...")
             
-            # 确保设备会话已创建
-            if not self.session_created and HAS_ECDSA:
+            # 只在明确启用时才创建设备会话
+            if enable_device_session and not self.session_created and HAS_ECDSA:
                 self.create_session(access_token)
             
             url = "https://member.aliyundrive.com/v1/activity/sign_in_reward"
-            nonce = str(uuid.uuid4())
-            timestamp = str(int(time.time() * 1000))
             
+            # 使用更标准的请求头
             headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/6.9.1 Chrome/112.0.5615.165 Electron/24.1.3.6 Safari/537.36",
                 "x-canary": "client=windows,app=adrive,version=v6.9.1",
                 "x-device-id": self.device_id,
-                "x-timestamp": timestamp,
-                "x-nonce": nonce,
             }
             
-            # 添加签名头
-            sig_headers = self._generate_signature()
-            headers.update(sig_headers)
+            # 只在启用设备会话时添加签名头
+            if enable_device_session and HAS_ECDSA and self.user_id:
+                sig_headers = self._generate_signature()
+                if sig_headers:
+                    headers.update(sig_headers)
+                    print("🔐 已添加设备签名")
             
             data = {"signInDay": sign_day}
             
             response = requests.post(url=url, headers=headers, json=data, timeout=15)
             print(f"🔍 领取奖励响应状态码: {response.status_code}")
             
+            # 打印响应内容用于调试
+            try:
+                response_text = response.text
+                print(f"🔍 响应内容: {response_text[:200]}...")
+            except:
+                pass
+            
             if response.status_code != 200:
                 try:
                     error_detail = response.json()
                     error_msg = error_detail.get("message", f"HTTP {response.status_code}")
+                    error_code = error_detail.get("code", "")
+                    
+                    # 特殊错误处理
+                    if "InvalidParameter" in str(error_code) or "InvalidParameter" in str(error_msg):
+                        print(f"⚠️ 参数错误，可能已经领取过或签到天数不正确")
+                    elif "Forbidden" in str(error_code):
+                        print(f"⚠️ 权限不足，可能需要设备签名验证")
+                    else:
+                        print(f"⚠️ 领取奖励失败: {error_msg} (code: {error_code})")
                 except:
                     error_msg = f"领取奖励请求失败，HTTP状态码: {response.status_code}"
-                print(f"⚠️ 领取奖励失败: {error_msg}")
+                    print(f"⚠️ {error_msg}")
                 return ""
             
             result = response.json()
             
+            # 检查响应结构
             if not result.get("success", False):
                 error_msg = result.get("message", "领取奖励失败")
-                print(f"⚠️ 领取奖励失败: {error_msg}")
+                error_code = result.get("code", "")
+                
+                # 如果是已经领取过的错误，不算失败
+                if "already" in str(error_msg).lower() or "已领取" in str(error_msg):
+                    print(f"💡 今日奖励已领取")
+                    return "今日奖励已领取"
+                
+                print(f"⚠️ 领取奖励失败: {error_msg} (code: {error_code})")
                 return ""
             
             # 解析奖励信息
@@ -842,7 +869,7 @@ class AliYun:
             elif reward_name:
                 reward_info = reward_name
                 if reward_desc:
-                    reward_info += f"({reward_desc})"
+                    reward_info += f" ({reward_desc})"
             elif reward_desc:
                 reward_info = reward_desc
             
@@ -850,11 +877,20 @@ class AliYun:
                 print(f"✅ 成功领取奖励: {reward_info}")
             else:
                 print("✅ 奖励已领取")
+                reward_info = "奖励已领取"
             
             return reward_info
             
+        except requests.exceptions.Timeout:
+            print(f"⚠️ 领取奖励请求超时")
+            return ""
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ 领取奖励网络错误: {str(e)}")
+            return ""
         except Exception as e:
             print(f"⚠️ 领取奖励异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return ""
 
 
@@ -934,6 +970,7 @@ def main():
     print(f"🤖 自动更新Token: {'已启用' if auto_update_token else '已禁用'}")
     print(f"🔒 隐私保护模式: {'已启用' if privacy_mode else '已禁用'}")
     print(f"🔑 通知显示Token: {'是' if show_token_in_notification else '否'}")
+    print(f"🔐 设备会话签名: {'已启用' if enable_device_session else '已禁用（推荐）'}")
     
     # 随机延迟（整体延迟）
     if random_signin:
