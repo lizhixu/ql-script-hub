@@ -34,8 +34,8 @@ max_random_delay = int(os.getenv("MAX_RANDOM_DELAY", "3600"))
 random_signin = os.getenv("RANDOM_SIGNIN", "true").lower() == "true"
 privacy_mode = os.getenv("PRIVACY_MODE", "true").lower() == "true"
 
-# ikuuu.nl 域名配置
-BASE_URL = 'https://ikuuu.nl'
+# ikuuu 域名配置（可通过环境变量 IKUUU_BASE_URL 覆盖）
+BASE_URL = os.environ.get('IKUUU_BASE_URL', 'https://ikuuu.nl').rstrip('/')
 LOGIN_URL = f'{BASE_URL}/auth/login'
 CHECK_URL = f'{BASE_URL}/user/checkin'
 

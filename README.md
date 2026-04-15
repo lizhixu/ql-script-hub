@@ -74,6 +74,7 @@
 
 | 变量名 | 必填 | 说明 | 示例 |
 |--------|:----:|------|------|
+| `IKUUU_BASE_URL` | ✅ | ikuuu 域名 | `https://ikuuu.nl` |
 | `IKUUU_EMAIL` | ✅ | 邮箱地址，多账号用英文逗号 `,` 分隔 | `user1@mail.com,user2@mail.com` |
 | `IKUUU_PASSWD` | ✅ | 对应密码，多账号用英文逗号 `,` 分隔（与邮箱一一对应） | `pass1,pass2` |
 | `PRIVACY_MODE` | ❌ | 隐私保护模式，默认 `true` | `false` |
@@ -90,6 +91,18 @@
 |--------|:----:|------|------|
 | `NODESEEK_COOKIE` | ✅ | NodeSeek Cookie，多账号用 `&` 分隔 | `session=xxx;...` |
 | `NS_RANDOM` | ❌ | 签到随机模式，默认 `true` | `false` |
+| `MAX_RANDOM_DELAY` | ❌ | 最大随机延迟秒数，默认 `3600` | `1800` |
+| `RANDOM_SIGNIN` | ❌ | 是否启用随机延迟，默认 `true` | `false` |
+
+---
+
+### 🌐 NodeLoc 签到 (`nodeloc_checkin.py`)
+
+> cron: `25 4 * * *`
+
+| 变量名 | 必填 | 说明 | 示例 |
+|--------|:----:|------|------|
+| `NODELOC_COOKIE` | ✅ | NodeLoc Cookie，多账号用 `&` 分隔 | `session=xxx;...` |
 | `MAX_RANDOM_DELAY` | ❌ | 最大随机延迟秒数，默认 `3600` | `1800` |
 | `RANDOM_SIGNIN` | ❌ | 是否启用随机延迟，默认 `true` | `false` |
 
