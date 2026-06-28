@@ -239,6 +239,10 @@ async function apiJson(method, pathOrUrl, options = {}) {
 
   if (result.status >= 400) {
     const message = data?.error || data?.message || shortText(text, 300);
+    console.error(`[调试] 请求详情: ${method} ${pathOrUrl}`);
+    console.error(`[调试] 状态码: ${result.status}`);
+    console.error(`[调试] 响应头:`, JSON.stringify(result.headers, null, 2));
+    console.error(`[调试] 响应体: ${shortText(text, 500)}`);
     throw new Error(`${pathOrUrl} HTTP ${result.status}：${message}`);
   }
 
